@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <modelVersion>4.0.0</modelVersion>
+
+  <artifactId>gb-belcp-account</artifactId>
+  <version>1.0.0</version>
+  <description>Microservicio para las operaciones de detalle de cuentas</description>
+
+  <properties>
+    <project.technology>sc-java</project.technology>
+  </properties>
+
+  <parent>
+    <groupId>pa.com.globalbank.belcp</groupId>
+    <artifactId>commons-quarkus-parent</artifactId>
+    <version>0.0.40096</version><!-- [GENERATED] No actualizar manualmente -->
+  </parent>
+
+  <repositories>
+    <repository>
+      <id>gb-belcp-artifacts-snapshots</id>
+      <url>https://pkgs.dev.azure.com/GlobalBankDevTest/BEL_CORPORATIVA_PRIVADA/_packaging/gb-belcp-artifacts-snapshots/maven/v1</url>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </repository>
+    <repository>
+      <id>gb-belcp-artifacts</id>
+      <url>https://pkgs.dev.azure.com/GlobalBankDevTest/BEL_CORPORATIVA_PRIVADA/_packaging/gb-belcp-artifacts/maven/v1</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+    </repository>
+  </repositories>
+</project>

@@ -12,6 +12,9 @@
     },
     "author": "GBM",
     "license": "ISC",
+    "engines": {
+        "node": "18.x || 16.x"
+    },
     "dependencies": {
         "adm-zip": "^0.5.10",
         "base-64": "^1.0.0",

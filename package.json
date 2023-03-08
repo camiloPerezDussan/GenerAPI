@@ -4,7 +4,7 @@
     "description": "Generador API para tecnologías como Quarkus, NodeJS, ApiConnect v5 y v10, SpringBoot, entre otros.",
     "main": "dist/app.js",
     "scripts": {
-        "start": "tsc && node dist/app.js",
+        "start": "npm install && tsc && node dist/app.js",
         "build": "tsc --build --clean && tsc ",
         "lint": "eslint . --ext .ts",
         "test": "echo \"Error: no test specified\" && exit 1"

@@ -2,7 +2,7 @@ import express from 'express';
 import { base64ToSwagger, swaggerToJSON } from '../middlewares/swagger';
 import { zipHeaders } from '../middlewares/reponse-headers';
 import { FolderManager } from '../commons/folder-manager';
-import { Quarkus } from '../make-api/quarkus';
+import { Quarkus } from '../generators/quarkus';
 import { Request, Response } from 'express';
 
 const app = express();

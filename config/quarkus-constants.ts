@@ -1,0 +1,3 @@
+export = {
+    localDate: "import local"
+}

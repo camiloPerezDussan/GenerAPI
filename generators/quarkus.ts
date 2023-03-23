@@ -89,8 +89,8 @@ export class Quarkus {
     private createModeImports(complexDataTypes: string[]): string {
         let template = '';
         complexDataTypes.map(dataType => {
-            template += `
-${this.importComplexTypes.get(dataType)};`;
+            template += `${this.importComplexTypes.get(dataType)};
+            `;
         });
         return template;
     }

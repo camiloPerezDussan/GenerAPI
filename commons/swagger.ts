@@ -1,12 +1,10 @@
 export class Swagger {
     private swagger; // swagger en json
-    private requestDefinitions: string[]; // arreglo con nombres de las definiciones de request
-    private responseDefinitions: string[]; // arreglo con nombres de las definiciones de response
+    private definitionNames: string[]; // arreglo con nombres de las definiciones
 
     constructor(swagger) {
         this.swagger = swagger;
-        this.requestDefinitions = [];
-        this.responseDefinitions = [];
+        this.definitionNames = [];
         this.searchDefinitions();
     }
 
@@ -25,7 +23,7 @@ export class Swagger {
     /** Extrae las definiciones usadas en el request de las operaciones */
     private searchRequestDefinitions(verbObject) {
         if (verbObject.requestBody && verbObject.requestBody.content && verbObject.requestBody.content['application/json']) {
-            this.extractRefDefinition(verbObject.requestBody, this.requestDefinitions);
+            this.extractRefDefinition(verbObject.requestBody);
         }
     }
 
@@ -36,22 +34,52 @@ export class Swagger {
             statusCodes.map(code => {
                 const codeObj = verbObject.responses[code];
                 if (codeObj.content && codeObj.content['application/json']) {
-                    this.extractRefDefinition(codeObj, this.responseDefinitions);
+                    this.extractRefDefinition(codeObj);
                 }
             });
         }
     }
 
     /** Extrae la definición de request y response y la almacena en el arreglo de definiciones de entrada */
-    private extractRefDefinition(object, definitions: string[]) {
+    private extractRefDefinition(object) {
         let definitionName: string = object.content['application/json'].schema.$ref;
         if (definitionName) {
             const splitName = definitionName.split('/');
             definitionName = splitName[splitName.length - 1];
-            if (!definitions.includes(definitionName)) {
-                definitions.push(definitionName);
+            if (!this.definitionNames.includes(definitionName)) {
+                this.definitionNames.push(definitionName);
+                this.getSecondaryDefinitiosnByDefinitionName(definitionName); // busca referencias a definiciones secundarias
             }
         }
+    }
+
+    private getSecondaryDefinitiosnByDefinitionName(definitionName: string) {
+        const definition = this.getObjectDefinitionByName(definitionName);
+        const propertyNames: string[] = this.getPropertiesByDefinition(definition);
+        for (const name of propertyNames) {
+            const property = definition.properties[name];
+            let ref = '';
+            if (property.type == 'array') {
+                ref = property.items.$ref;
+            } else if (property.$ref) {
+                ref = property.$ref;
+            }
+            if (ref && ref != '') {
+                ref = (ref.split('/')).pop();
+                this.addToSecondaryDefinitions(ref);
+                this.getSecondaryDefinitiosnByDefinitionName(ref);
+            }
+        }
+    }
+
+    private addToSecondaryDefinitions(definitionName) {
+        if (definitionName && !this.definitionNames.includes(definitionName)) {
+            this.definitionNames.push(definitionName);
+        }
+    }
+
+    private getPropertiesByDefinition(definition): string[] {
+        return Object.keys(definition.properties);
     }
 
     /** Busca en el swagger la definición y entrega el objeto con toda la información asociada */
@@ -87,11 +115,7 @@ export class Swagger {
         return this.swagger.components.schemas;
     }
 
-    public getRequestDefinitions(): string[] {
-        return this.requestDefinitions;
-    }
-
-    public getResponseDefinitions(): string[] {
-        return this.responseDefinitions;
+    public getDefinitionNames(): string[] {
+        return this.definitionNames;
     }
 }

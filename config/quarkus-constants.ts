@@ -1,3 +1,0 @@
-export = {
-    localDate: "import local"
-}

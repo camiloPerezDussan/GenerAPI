@@ -20,10 +20,13 @@ const importComplexTypes: Map<string, string> = new Map<string, string>([
     ["List", "import java.util.List"],
     ["BigDecimal", "import java.math.BigDecimal"],
     ["LocalDateTime", "import java.time.LocalDateTime"]
-])
+]);
+
+const JSON_MEDIA_TYPE = 'application/json';
 export {
     simpleFormatToJavaType,
     complexFormatToJavaType,
     defaultFormatValues,
-    importComplexTypes
+    importComplexTypes,
+    JSON_MEDIA_TYPE
 }

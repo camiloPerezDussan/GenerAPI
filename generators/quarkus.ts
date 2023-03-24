@@ -1,6 +1,12 @@
 import { FolderManager } from '../commons/folder-manager';
 import { Swagger } from '../commons/swagger';
-import { simpleFormatToJavaType, complexFormatToJavaType, defaultFormatValues, importComplexTypes } from '../constants/quarkus-constants';
+import {
+    simpleFormatToJavaType,
+    complexFormatToJavaType,
+    defaultFormatValues,
+    importComplexTypes,
+    JSON_MEDIA_TYPE
+} from '../constants/quarkus-constants';
 
 export class Quarkus {
     private swagger: Swagger;
@@ -15,17 +21,15 @@ export class Quarkus {
         this.manager = manager;
     }
 
-    /** para los modelos instanciar varias veces el scaffold sobre el modelo plantilla */
     public async make() {
-        await this.createStructure();
+        const res = this.createResource();
+        await this.createStructure(res.resourceTemplate, res.resourceImports);
         await this.createModels();
-        await this.createResource();
         await this.createService();
         return;
     }
 
-    /** crea estructura de carpetas y reemplaza valores estandar en nombres y contenido de carpetas y archivos de la aplicación quarkus */
-    private async createStructure() {
+    private async createStructure(resourceTemplate: string, resourceImports: string) {
         await this.manager.replaceData(
             {
                 appName: this.swagger.getTitle(),
@@ -34,75 +38,62 @@ export class Quarkus {
                 importPackage: this.importPackage,
                 package_1: this.appPackage[0],
                 package_2: this.appPackage[1],
-                package_3: this.appPackage[2]
+                package_3: this.appPackage[2],
+                resourceTemplate,
+                resourceImports
             }, './templates/quarkus/app', './outputs'
         );
         return;
     }
 
     private async createModels() {
-        for (const name of this.swagger.getDefinitionNames()) {
+        for (const definitionName of this.swagger.getDefinitionNames()) {
             const complexDataTypes: string[] = [];
-            const definitionObj = this.swagger.getObjectDefinitionByName(name);
-            const template: string = this.createParameters(definitionObj, complexDataTypes); // debe crear un string con los paráemtros a reemplazar en el archivo .java
-            await this.createModel(`${name}`, this.createModelImports(complexDataTypes), template, './templates/quarkus/model');
+            const template: string = this.createParameters(definitionName, complexDataTypes); // debe crear un string con los paráemtros a reemplazar en el archivo .java
+            await this.createModel(`${definitionName}`, this.createModelImports(complexDataTypes), template, './templates/quarkus/model');
         }
         return;
     }
 
-    /** Crear template de parámetros y retorna el template y una lista de tipos de datos complejos */
-    private createParameters(definitionObj, complexDataTypes: string[]): string {
-        let template = '';
-        const params: string[] = Object.keys(definitionObj.properties);
-        for (const param of params) {
-            const parameter = definitionObj.properties[param];
-            const dataType = this.searchDataType(parameter.type, parameter, complexDataTypes);
-
-            template += `
+    private createParameters(definitionName: string, complexDataTypes: string[]): string {
+        const requiredParams = this.swagger.getRequiredParamsByDefinitionName(definitionName);
+        return this.swagger.getParamObjectsByDefinitionName(definitionName).map(paramObject => {
+            const dataType = this.searchDefinitionDataType(paramObject, complexDataTypes);
+            return `
     @NotBlank
-    @Schema(required = ${definitionObj.required ? definitionObj.required.includes(param) : false}, description = "${parameter.description}", example = "${parameter.example}")
-    private ${dataType} ${param};
+    @Schema(required = ${requiredParams ? requiredParams.includes(paramObject.name) : false}, description = "${paramObject.description}", example = "${paramObject.example}")
+    private ${dataType} ${paramObject.name};
     `;
-        }
-        return template;
+        }).join();
     }
 
-    private searchDataType(typeParam: string, paramObj, complexDataTypes: string[]): string {
+    private searchDefinitionDataType(paramObj, complexDataTypes: string[]): string {
+        const javaType = complexFormatToJavaType.get(paramObj.format);
+        if (javaType) this.addComplexFormatType(javaType, complexDataTypes);
+        if (paramObj.type == 'array') this.addComplexFormatType(complexFormatToJavaType.get(paramObj.type), complexDataTypes);
+        return this.dataTypeToJavaType(paramObj);
+    }
+
+    private dataTypeToJavaType(paramObj) {
         let javaType: string = simpleFormatToJavaType.get(paramObj.format);
-        if (javaType) {
-            return javaType;
-        }
+        if (javaType) return javaType;
 
         javaType = complexFormatToJavaType.get(paramObj.format);
-        if (javaType) {
-            this.addComplexFormatType(javaType, complexDataTypes);
-            return javaType;
-        }
+        if (javaType) return javaType;
 
-        javaType = defaultFormatValues.get(typeParam);
-        if (javaType) {
-            return javaType;
-        }
+        javaType = defaultFormatValues.get(paramObj.type);
+        if (javaType) return javaType;
 
-        if (typeParam == 'array') {
-            this.addComplexFormatType(complexFormatToJavaType.get(typeParam), complexDataTypes);
-            return `${complexFormatToJavaType.get(typeParam)} <${this.searchDataType(paramObj.items.type, paramObj.items, complexDataTypes)}>`;
-        }
+        if (paramObj.type == 'array') return `${complexFormatToJavaType.get(paramObj.type)} <${this.dataTypeToJavaType(paramObj.items)}>`;
 
-        if (paramObj.$ref) {
-            const ref: string = (paramObj.$ref.split('/')).pop();
-            return ref;
-        }
+
+        if (paramObj.$ref) return paramObj.$ref.split('/').pop();
         return javaType;
     }
 
     private createModelImports(complexDataTypes: string[]): string {
-        let template = '';
-        complexDataTypes.map(dataType => {
-            template += `${importComplexTypes.get(dataType)};
-            `;
-        });
-        return template;
+        return complexDataTypes.map(dataType => `${importComplexTypes.get(dataType)};
+            `).join('');
     }
 
     private addComplexFormatType(complexDataType: string, complexDataTypes: string[]) {
@@ -111,7 +102,6 @@ export class Quarkus {
         }
     }
 
-    /** identifica las definiciones de request y response y crea los archivos correspondientes */
     private async createModel(name: string, imports: string, parameters: string, origintemplate: string) {
         await this.manager.replaceData(
             {
@@ -128,8 +118,76 @@ export class Quarkus {
         return;
     }
 
-    private async createResource() {
-        return;
+    /** METODOS PARA CONSTRUIR EL ARCHIVO RESOURCE */
+
+    private createResource() {
+        const res = this.createResourceMethods();
+        return {
+            resourceTemplate: res.resourceTemplate,
+            resourceImports: 'ACÁ VAN LOS IMPORTS'
+        }
+    }
+
+    private createResourceMethods() {
+        let template = '';
+        const modelImports: string[] = [];
+
+        for (const path of this.swagger.getPathNames()) {
+            const verbObjects = this.swagger.getVerbObjectsByPathName(path);
+            for (const verbObject of verbObjects) {
+
+                /** crear el nombre del método en el resource*/
+                const partPathsName: string[] = path.split('/')
+                partPathsName.push(verbObject.name);
+                const methodName: string = partPathsName.map((part: string, index: number) => {
+                    if (part.includes('{') && part.includes('}')) part = part.split('{').pop().split('}')[0];
+                    return index === 0 ? part.toLowerCase() : part.charAt(0).toUpperCase() + part.slice(1);
+                }).join('');
+
+                /** crear las respuestas al método del resource */
+                const responses: string = this.swagger.getCodeObjectsByVerbObject(verbObject).map(codeObject => {
+                    let definition: string = this.swagger.getDefinitionNameByCodeObject(codeObject);
+                    definition = definition ? `, content = @Content(schema = @Schema(type = SchemaType.OBJECT, implementation = ${definition}.class))` : '';
+                    return `@APIResponse(responseCode = "${codeObject.statusCode}", description = "${codeObject.description}"${definition})`
+                }).join(`,
+        `);
+
+                /** identificar queryParams, headers, pathParams y requestBody */
+                const parameters: string[] = this.swagger.getParametersByVerbObject(verbObject).map(parameterObject => {
+                    const parameterType = parameterObject.in;
+                    const dataType = this.dataTypeToJavaType(parameterObject.schema);
+                    if (parameterType == 'query') return `@RestQuery ${dataType} ${parameterObject.name}`;
+                    if (parameterType == 'path') return `@RestPath ${dataType} ${parameterObject.name}`;
+                    if (parameterType == 'header') return `@HeaderParam('${parameterObject.name}') ${dataType} ${parameterObject.name}`;
+                });
+                const requestDefinition: string = this.swagger.getRequestDefinitionName(verbObject);
+                if (requestDefinition) {
+                    modelImports.push(requestDefinition);
+                    parameters.unshift(`@Valid @RequestBody ${requestDefinition} request`);
+                }
+
+                template += `
+    @${verbObject.name}
+    @Path("${path}")
+    @Produces("${JSON_MEDIA_TYPE}")
+    @Consumes("${JSON_MEDIA_TYPE}")
+    @Counted(name = "${verbObject.description} V${this.swagger.getMajorVersion()} Count")
+    @Timed(name = "${verbObject.description} V${this.swagger.getMajorVersion()} Time")
+    @APIResponses(value = {
+        ${responses}
+    })
+    @Operation(summary = "${verbObject.summary}", description = "${verbObject.description}")
+    public Response ${methodName}(${parameters.join(`,
+        `)}) throws Exception {
+        return Response.ok().entity(apim.${methodName}(request, language, messageId)).build();
+    }
+    `;
+            }
+        }
+        return {
+            resourceTemplate: template,
+            modelImports: modelImports
+        };
     }
 
     private async createService() {

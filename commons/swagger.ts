@@ -1,3 +1,5 @@
+import { JSON_MEDIA_TYPE } from '../constants/quarkus-constants';
+
 export class Swagger {
     private swagger; // swagger en json
     private definitionNames: string[]; // arreglo con nombres de las definiciones
@@ -11,9 +13,8 @@ export class Swagger {
     private searchDefinitions() {
         const pathNames: string[] = this.getPathNames();
         pathNames.map(pathName => {
-            const verbNames: string[] = this.getVerbNamesByPath(pathName);
-            verbNames.map(verbName => {
-                const verbObject = this.swagger.paths[pathName][verbName];
+            const verbObjects = this.getVerbObjectsByPathName(pathName);
+            verbObjects.map(verbObject => {
                 this.searchRequestDefinitions(verbObject);
                 this.searchResponseDefinitions(verbObject);
             })
@@ -22,30 +23,42 @@ export class Swagger {
 
     /** Extrae las definiciones usadas en el request de las operaciones */
     private searchRequestDefinitions(verbObject) {
-        if (verbObject.requestBody && verbObject.requestBody.content && verbObject.requestBody.content['application/json']) {
-            this.extractRefDefinition(verbObject.requestBody);
+        if (this.containsRequestBodyRefDefinition(verbObject)) {
+            this.searchRefDefinition(verbObject.requestBody);
         }
     }
 
     /** Extrae las definiciones usadas en el response de las operaciones */
     private searchResponseDefinitions(verbObject) {
-        if (verbObject.responses) {
-            const statusCodes: string[] = Object.keys(verbObject.responses);
-            statusCodes.map(code => {
-                const codeObj = verbObject.responses[code];
-                if (codeObj.content && codeObj.content['application/json']) {
-                    this.extractRefDefinition(codeObj);
-                }
-            });
-        }
+        const codeObjects = this.getCodeObjectsByVerbObject(verbObject);
+        codeObjects.map(codeObject => {
+            if (codeObject.content && codeObject.content[JSON_MEDIA_TYPE]) {
+                this.searchRefDefinition(codeObject);
+            }
+        });
     }
 
     /** Extrae la definición de request y response y la almacena en el arreglo de definiciones de entrada */
-    private extractRefDefinition(object) {
-        let definitionName: string = object.content['application/json'].schema.$ref;
-        if (definitionName) {
-            const splitName = definitionName.split('/');
-            definitionName = splitName[splitName.length - 1];
+    private searchRefDefinition(object) {
+        this.saveDefinition(object.content[JSON_MEDIA_TYPE].schema.$ref);
+    }
+
+    private getSecondaryDefinitiosnByDefinitionName(definitionName: string) {
+        const propertyObjects = this.getParamObjectsByDefinitionName(definitionName);
+        for (const property of propertyObjects) {
+            let ref = '';
+            if (property.type == 'array') {
+                ref = property.items.$ref;
+            } else if (property.$ref) {
+                ref = property.$ref;
+            }
+            this.saveDefinition(ref);
+        }
+    }
+
+    private saveDefinition(definitionName: string) {
+        if (definitionName && definitionName != '') {
+            definitionName = definitionName.split('/').pop();
             if (!this.definitionNames.includes(definitionName)) {
                 this.definitionNames.push(definitionName);
                 this.getSecondaryDefinitiosnByDefinitionName(definitionName); // busca referencias a definiciones secundarias
@@ -53,46 +66,55 @@ export class Swagger {
         }
     }
 
-    private getSecondaryDefinitiosnByDefinitionName(definitionName: string) {
-        const definition = this.getObjectDefinitionByName(definitionName);
-        const propertyNames: string[] = this.getPropertiesByDefinition(definition);
-        for (const name of propertyNames) {
-            const property = definition.properties[name];
-            let ref = '';
-            if (property.type == 'array') {
-                ref = property.items.$ref;
-            } else if (property.$ref) {
-                ref = property.$ref;
-            }
-            if (ref && ref != '') {
-                ref = (ref.split('/')).pop();
-                this.addToSecondaryDefinitions(ref);
-                this.getSecondaryDefinitiosnByDefinitionName(ref);
-            }
-        }
-    }
-
-    private addToSecondaryDefinitions(definitionName) {
-        if (definitionName && !this.definitionNames.includes(definitionName)) {
-            this.definitionNames.push(definitionName);
-        }
-    }
-
-    private getPropertiesByDefinition(definition): string[] {
-        return Object.keys(definition.properties);
+    private containsRequestBodyRefDefinition(verbObject) {
+        return (verbObject.requestBody && verbObject.requestBody.content
+            && verbObject.requestBody.content[JSON_MEDIA_TYPE] && verbObject.requestBody.content[JSON_MEDIA_TYPE].schema
+            && verbObject.requestBody.content[JSON_MEDIA_TYPE].schema.$ref);
     }
 
     /** Busca en el swagger la definición y entrega el objeto con toda la información asociada */
-    public getObjectDefinitionByName(definitionName: string) {
+    private getObjectDefinitionByName(definitionName: string) {
         return this.swagger.components.schemas[definitionName];
     }
 
-    private getPathNames(): string[] {
-        return Object.keys(this.swagger.paths);
+    public getParamObjectsByDefinitionName(definitionName) {
+        const definition = this.getObjectDefinitionByName(definitionName);
+        const propertyNames: string[] = Object.keys(definition.properties);
+        return propertyNames.map(name => {
+            const propertyObject = definition.properties[name];
+            propertyObject['name'] = name;
+            return propertyObject;
+        });
     }
 
     private getVerbNamesByPath(pathName: string): string[] {
         return Object.keys(this.swagger.paths[pathName]);
+    }
+
+    public getVerbObjectsByPathName(pathName: string) {
+        return this.getVerbNamesByPath(pathName).map(verbName => {
+            const verbObject = this.getVerbObject(pathName, verbName);
+            verbObject['name'] = verbName;
+            return verbObject;
+        });
+    }
+
+    public getCodeObjectsByVerbObject(verbObject) {
+        if (verbObject.responses) {
+            return Object.keys(verbObject.responses).map(code => {
+                verbObject.responses[code]['statusCode'] = code;
+                return verbObject.responses[code]
+            });
+        }
+        return [];
+    }
+
+    private getVerbObject(pathName: string, verbName: string) {
+        return this.swagger.paths[pathName][verbName];
+    }
+
+    public getPathNames(): string[] {
+        return Object.keys(this.swagger.paths);
     }
 
     public getTitle(): string {
@@ -100,7 +122,7 @@ export class Swagger {
     }
 
     public getTitleLowerCase(): string {
-        return (this.swagger.info.title).toLowerCase();
+        return this.getTitle().toLowerCase();
     }
 
     public getVersion(): string {
@@ -108,7 +130,7 @@ export class Swagger {
     }
 
     public getMajorVersion(): string {
-        return (this.swagger.info.version).split('.')[0];
+        return this.getVersion().split('.')[0];
     }
 
     public getSchemas() {
@@ -117,5 +139,25 @@ export class Swagger {
 
     public getDefinitionNames(): string[] {
         return this.definitionNames;
+    }
+
+    public getRequestDefinitionName(verbObject) {
+        if (this.containsRequestBodyRefDefinition(verbObject))
+            return verbObject.requestBody.content[JSON_MEDIA_TYPE].schema.$ref.split('/').pop();
+        return null;
+    }
+    public getDefinitionNameByCodeObject(codeObject) {
+        if (codeObject.content && codeObject.content[JSON_MEDIA_TYPE] && codeObject.content[JSON_MEDIA_TYPE].schema.$ref) {
+            return codeObject.content[JSON_MEDIA_TYPE].schema.$ref.split('/').pop();
+        }
+        return null;
+    }
+
+    public getParametersByVerbObject(verbObject) {
+        return verbObject.parameters ? verbObject.parameters : [];
+    }
+
+    public getRequiredParamsByDefinitionName(definitionName: string) {
+        return this.getSchemas()[definitionName].required;
     }
 }

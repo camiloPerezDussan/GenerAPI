@@ -135,38 +135,52 @@ export class Quarkus {
         for (const path of this.swagger.getPathNames()) {
             const verbObjects = this.swagger.getVerbObjectsByPathName(path);
             for (const verbObject of verbObjects) {
+                template += this.createResourceTemplate(path,
+                    this.createResourceMethodName(path, verbObject.name), verbObject,
+                    this.createResourceApiResponses(verbObject),
+                    this.createResourceParameters(verbObject));
+            }
+        }
+        return {
+            resourceTemplate: template,
+            modelImports: modelImports
+        };
+    }
 
-                /** crear el nombre del método en el resource*/
-                const partPathsName: string[] = path.split('/')
-                partPathsName.push(verbObject.name);
-                const methodName: string = partPathsName.map((part: string, index: number) => {
-                    if (part.includes('{') && part.includes('}')) part = part.split('{').pop().split('}')[0];
-                    return index === 0 ? part.toLowerCase() : part.charAt(0).toUpperCase() + part.slice(1);
-                }).join('');
+    private createResourceMethodName(path: string, verbName: string): string {
+        const partPathsName: string[] = path.split('/')
+        partPathsName.push(verbName);
+        return partPathsName.map((part: string, index: number) => {
+            if (part.includes('{') && part.includes('}')) part = part.split('{').pop().split('}')[0];
+            return index === 0 ? part.toLowerCase() : part.charAt(0).toUpperCase() + part.slice(1);
+        }).join('');
+    }
 
-                /** crear las respuestas al método del resource */
-                const responses: string = this.swagger.getCodeObjectsByVerbObject(verbObject).map(codeObject => {
-                    let definition: string = this.swagger.getDefinitionNameByCodeObject(codeObject);
-                    definition = definition ? `, content = @Content(schema = @Schema(type = SchemaType.OBJECT, implementation = ${definition}.class))` : '';
-                    return `@APIResponse(responseCode = "${codeObject.statusCode}", description = "${codeObject.description}"${definition})`
-                }).join(`,
+    private createResourceApiResponses(verbObject): string {
+        return this.swagger.getCodeObjectsByVerbObject(verbObject).map(codeObject => {
+            let definition: string = this.swagger.getDefinitionNameByCodeObject(codeObject);
+            definition = definition ? `, content = @Content(schema = @Schema(type = SchemaType.OBJECT, implementation = ${definition}.class))` : '';
+            return `@APIResponse(responseCode = "${codeObject.statusCode}", description = "${codeObject.description}"${definition})`
+        }).join(`,
         `);
+    }
 
-                /** identificar queryParams, headers, pathParams y requestBody */
-                const parameters: string[] = this.swagger.getParametersByVerbObject(verbObject).map(parameterObject => {
-                    const parameterType = parameterObject.in;
-                    const dataType = this.dataTypeToJavaType(parameterObject.schema);
-                    if (parameterType == 'query') return `@RestQuery ${dataType} ${parameterObject.name}`;
-                    if (parameterType == 'path') return `@RestPath ${dataType} ${parameterObject.name}`;
-                    if (parameterType == 'header') return `@HeaderParam('${parameterObject.name}') ${dataType} ${parameterObject.name}`;
-                });
-                const requestDefinition: string = this.swagger.getRequestDefinitionName(verbObject);
-                if (requestDefinition) {
-                    modelImports.push(requestDefinition);
-                    parameters.unshift(`@Valid @RequestBody ${requestDefinition} request`);
-                }
+    private createResourceParameters(verbObject): string {
+        const parameters: string[] = this.swagger.getParametersByVerbObject(verbObject).map(parameterObject => {
+            const parameterType = parameterObject.in;
+            const dataType = this.dataTypeToJavaType(parameterObject.schema);
+            if (parameterType == 'query') return `@RestQuery ${dataType} ${parameterObject.name}`;
+            if (parameterType == 'path') return `@RestPath ${dataType} ${parameterObject.name}`;
+            if (parameterType == 'header') return `@HeaderParam('${parameterObject.name}') ${dataType} ${parameterObject.name}`;
+        });
+        const requestDefinition: string = this.swagger.getRequestDefinitionName(verbObject);
+        if (requestDefinition) parameters.unshift(`@Valid @RequestBody ${requestDefinition} request`);
+        return parameters.join(`,
+            `);
+    }
 
-                template += `
+    private createResourceTemplate(path: string, methodName: string, verbObject, responses: string, parameters: string): string {
+        return `
     @${verbObject.name}
     @Path("${path}")
     @Produces("${JSON_MEDIA_TYPE}")
@@ -177,17 +191,10 @@ export class Quarkus {
         ${responses}
     })
     @Operation(summary = "${verbObject.summary}", description = "${verbObject.description}")
-    public Response ${methodName}(${parameters.join(`,
-        `)}) throws Exception {
+    public Response ${methodName}(${parameters}) throws Exception {
         return Response.ok().entity(apim.${methodName}(request, language, messageId)).build();
     }
     `;
-            }
-        }
-        return {
-            resourceTemplate: template,
-            modelImports: modelImports
-        };
     }
 
     private async createService() {

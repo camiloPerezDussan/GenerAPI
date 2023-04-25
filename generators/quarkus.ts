@@ -13,23 +13,24 @@ export class Quarkus {
     private manager: FolderManager;
     private importPackage: string;
     private appPackage: string[];
+    private resourceImports: string[];
 
     constructor(swagger: Swagger, appPackage: string, manager: FolderManager) {
         this.swagger = swagger;
         this.importPackage = appPackage;
         this.appPackage = appPackage.split(".");
         this.manager = manager;
+        this.resourceImports = [];
     }
 
     public async make() {
-        const res = this.createResource();
-        await this.createStructure(res.resourceTemplate, res.resourceImports);
+        await this.createStructure(this.createResource());
         await this.createModels();
         await this.createService();
         return;
     }
 
-    private async createStructure(resourceTemplate: string, resourceImports: string) {
+    private async createStructure(resourceTemplate: string) {
         await this.manager.replaceData(
             {
                 appName: this.swagger.getTitle(),
@@ -40,7 +41,7 @@ export class Quarkus {
                 package_2: this.appPackage[1],
                 package_3: this.appPackage[2],
                 resourceTemplate,
-                resourceImports
+                resourceImports: this.resourceImports
             }, './templates/quarkus/app', './outputs'
         );
         return;
@@ -86,13 +87,12 @@ export class Quarkus {
 
         if (paramObj.type == 'array') return `${complexFormatToJavaType.get(paramObj.type)} <${this.dataTypeToJavaType(paramObj.items)}>`;
 
-
         if (paramObj.$ref) return paramObj.$ref.split('/').pop();
         return javaType;
     }
 
     private createModelImports(complexDataTypes: string[]): string {
-        return complexDataTypes.map(dataType => `${importComplexTypes.get(dataType)};
+        return complexDataTypes.map((dataType): string => `${importComplexTypes.get(dataType)};
             `).join('');
     }
 
@@ -121,31 +121,24 @@ export class Quarkus {
     /** METODOS PARA CONSTRUIR EL ARCHIVO RESOURCE */
 
     private createResource() {
-        const res = this.createResourceMethods();
-        return {
-            resourceTemplate: res.resourceTemplate,
-            resourceImports: 'ACÁ VAN LOS IMPORTS'
-        }
-    }
-
-    private createResourceMethods() {
-        let template = '';
-        const modelImports: string[] = [];
-
-        for (const path of this.swagger.getPathNames()) {
+        return this.swagger.getPathNames().map((path: string) => {
             const verbObjects = this.swagger.getVerbObjectsByPathName(path);
-            for (const verbObject of verbObjects) {
-                template += this.createResourceTemplate(path,
-                    this.createResourceMethodName(path, verbObject.name), verbObject,
-                    this.createResourceApiResponses(verbObject),
-                    this.createResourceParameters(verbObject));
-            }
-        }
-        return {
-            resourceTemplate: template,
-            modelImports: modelImports
-        };
+            return verbObjects.map(verbObject => this.createResourceTemplate(path,
+                this.createResourceMethodName(path, verbObject.name), verbObject,
+                this.createResourceApiResponses(verbObject),
+                this.createResourceParameters(verbObject))).join('');
+        }).join();
     }
+
+ /*   private createResourceImports(): string {
+        this.resourceImports.map((keyImport: string) => {
+            let importItem = ""//genericResourceImports.get(keyImport);
+            if (!importItem) {
+            }
+        });
+        return this.resourceImports.map((dataType: string) => `import ${this.importPackage}.${this.swagger.getTitleLowerCase()}.application.v${this.swagger.getMajorVersion()}.front.${dataType};
+`).join('');
+    }*/
 
     private createResourceMethodName(path: string, verbName: string): string {
         const partPathsName: string[] = path.split('/')
@@ -156,10 +149,25 @@ export class Quarkus {
         }).join('');
     }
 
+    private addResourceImport(keyImport) {
+        if (!this.resourceImports.includes(keyImport)) {
+            this.resourceImports.push(keyImport);
+        }
+    }
+
     private createResourceApiResponses(verbObject): string {
         return this.swagger.getCodeObjectsByVerbObject(verbObject).map(codeObject => {
             let definition: string = this.swagger.getDefinitionNameByCodeObject(codeObject);
-            definition = definition ? `, content = @Content(schema = @Schema(type = SchemaType.OBJECT, implementation = ${definition}.class))` : '';
+            if (definition) {
+                this.addResourceImport(definition);
+                this.addResourceImport('Content');
+                this.addResourceImport('Schema');
+                this.addResourceImport('SchemaType');
+                definition = `, content = @Content(schema = @Schema(type = SchemaType.OBJECT, implementation = ${definition}.class))`;
+            } else {
+                definition = '';
+            }
+            this.addResourceImport('APIResponse');
             return `@APIResponse(responseCode = "${codeObject.statusCode}", description = "${codeObject.description}"${definition})`
         }).join(`,
         `);
@@ -169,19 +177,31 @@ export class Quarkus {
         const parameters: string[] = this.swagger.getParametersByVerbObject(verbObject).map(parameterObject => {
             const parameterType = parameterObject.in;
             const dataType = this.dataTypeToJavaType(parameterObject.schema);
-            if (parameterType == 'query') return `@RestQuery ${dataType} ${parameterObject.name}`;
-            if (parameterType == 'path') return `@RestPath ${dataType} ${parameterObject.name}`;
-            if (parameterType == 'header') return `@HeaderParam('${parameterObject.name}') ${dataType} ${parameterObject.name}`;
+            if (parameterType == 'query') {
+                this.addResourceImport('APIResponse');
+                return `@RestQuery ${dataType} ${parameterObject.name}`;
+            } else if (parameterType == 'path') {
+                this.addResourceImport('APIResponse');
+                return `@RestPath ${dataType} ${parameterObject.name}`;
+            } else if (parameterType == 'header') {
+                this.addResourceImport('APIResponse');
+                return `@HeaderParam('${parameterObject.name}') ${dataType} ${parameterObject.name}`;
+            }
         });
         const requestDefinition: string = this.swagger.getRequestDefinitionName(verbObject);
-        if (requestDefinition) parameters.unshift(`@Valid @RequestBody ${requestDefinition} request`);
+        if (requestDefinition) {
+            this.addResourceImport(requestDefinition);
+            this.addResourceImport('RequestBody');
+            this.addResourceImport('Valid');
+            parameters.unshift(`@Valid @RequestBody ${requestDefinition} request`);
+        }
         return parameters.join(`,
             `);
     }
 
     private createResourceTemplate(path: string, methodName: string, verbObject, responses: string, parameters: string): string {
         return `
-    @${verbObject.name}
+    @${verbObject.name.toUpperCase()}
     @Path("${path}")
     @Produces("${JSON_MEDIA_TYPE}")
     @Consumes("${JSON_MEDIA_TYPE}")

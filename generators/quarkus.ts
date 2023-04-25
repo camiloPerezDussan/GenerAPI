@@ -5,6 +5,7 @@ import {
     complexFormatToJavaType,
     defaultFormatValues,
     importComplexTypes,
+    genericResourceImports,
     JSON_MEDIA_TYPE
 } from '../constants/quarkus-constants';
 
@@ -41,7 +42,7 @@ export class Quarkus {
                 package_2: this.appPackage[1],
                 package_3: this.appPackage[2],
                 resourceTemplate,
-                resourceImports: this.resourceImports
+                resourceImports: this.resourceImports.join('\n')
             }, './templates/quarkus/app', './outputs'
         );
         return;
@@ -50,7 +51,7 @@ export class Quarkus {
     private async createModels() {
         for (const definitionName of this.swagger.getDefinitionNames()) {
             const complexDataTypes: string[] = [];
-            const template: string = this.createParameters(definitionName, complexDataTypes); // debe crear un string con los paráemtros a reemplazar en el archivo .java
+            const template: string = this.createParameters(definitionName, complexDataTypes);
             await this.createModel(`${definitionName}`, this.createModelImports(complexDataTypes), template, './templates/quarkus/model');
         }
         return;
@@ -65,7 +66,7 @@ export class Quarkus {
     @Schema(required = ${requiredParams ? requiredParams.includes(paramObject.name) : false}, description = "${paramObject.description}", example = "${paramObject.example}")
     private ${dataType} ${paramObject.name};
     `;
-        }).join();
+        }).join('');
     }
 
     private searchDefinitionDataType(paramObj, complexDataTypes: string[]): string {
@@ -92,8 +93,7 @@ export class Quarkus {
     }
 
     private createModelImports(complexDataTypes: string[]): string {
-        return complexDataTypes.map((dataType): string => `${importComplexTypes.get(dataType)};
-            `).join('');
+        return complexDataTypes.map((dataType): string => importComplexTypes.get(dataType)).join('\n');
     }
 
     private addComplexFormatType(complexDataType: string, complexDataTypes: string[]) {
@@ -119,7 +119,6 @@ export class Quarkus {
     }
 
     /** METODOS PARA CONSTRUIR EL ARCHIVO RESOURCE */
-
     private createResource() {
         return this.swagger.getPathNames().map((path: string) => {
             const verbObjects = this.swagger.getVerbObjectsByPathName(path);
@@ -127,18 +126,18 @@ export class Quarkus {
                 this.createResourceMethodName(path, verbObject.name), verbObject,
                 this.createResourceApiResponses(verbObject),
                 this.createResourceParameters(verbObject))).join('');
-        }).join();
+        }).join('');
     }
 
- /*   private createResourceImports(): string {
+    private createResourceImports(): string {
         this.resourceImports.map((keyImport: string) => {
-            let importItem = ""//genericResourceImports.get(keyImport);
+            let importItem = genericResourceImports.get(keyImport);
             if (!importItem) {
             }
         });
         return this.resourceImports.map((dataType: string) => `import ${this.importPackage}.${this.swagger.getTitleLowerCase()}.application.v${this.swagger.getMajorVersion()}.front.${dataType};
 `).join('');
-    }*/
+    }
 
     private createResourceMethodName(path: string, verbName: string): string {
         const partPathsName: string[] = path.split('/')
@@ -149,9 +148,13 @@ export class Quarkus {
         }).join('');
     }
 
-    private addResourceImport(keyImport) {
-        if (!this.resourceImports.includes(keyImport)) {
-            this.resourceImports.push(keyImport);
+    private addResourceImport(keyImport: string) {
+        let importLine: string = '';
+        importLine = !genericResourceImports.has(keyImport)
+            ? `import ${this.importPackage}.${this.swagger.getTitleLowerCase()}.application.v${this.swagger.getMajorVersion()}.front.${keyImport};`
+            : genericResourceImports.get(keyImport);
+        if (!this.resourceImports.includes(importLine)) {
+            this.resourceImports.push(importLine);
         }
     }
 
@@ -178,13 +181,13 @@ export class Quarkus {
             const parameterType = parameterObject.in;
             const dataType = this.dataTypeToJavaType(parameterObject.schema);
             if (parameterType == 'query') {
-                this.addResourceImport('APIResponse');
+                this.addResourceImport('RestQuery');
                 return `@RestQuery ${dataType} ${parameterObject.name}`;
             } else if (parameterType == 'path') {
-                this.addResourceImport('APIResponse');
+                this.addResourceImport('RestPath');
                 return `@RestPath ${dataType} ${parameterObject.name}`;
             } else if (parameterType == 'header') {
-                this.addResourceImport('APIResponse');
+                this.addResourceImport('HeaderParam');
                 return `@HeaderParam('${parameterObject.name}') ${dataType} ${parameterObject.name}`;
             }
         });
@@ -200,8 +203,18 @@ export class Quarkus {
     }
 
     private createResourceTemplate(path: string, methodName: string, verbObject, responses: string, parameters: string): string {
+        const verb = verbObject.name.toUpperCase();
+        this.addResourceImport(verb);
+        this.addResourceImport('Path');
+        this.addResourceImport('Produces');
+        this.addResourceImport('Consumes');
+        this.addResourceImport('Counted');
+        this.addResourceImport('Timed');
+        this.addResourceImport('APIResponses');
+        this.addResourceImport('Operation');
+        this.addResourceImport('Response');
         return `
-    @${verbObject.name.toUpperCase()}
+    @${verb}
     @Path("${path}")
     @Produces("${JSON_MEDIA_TYPE}")
     @Consumes("${JSON_MEDIA_TYPE}")

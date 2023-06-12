@@ -8,11 +8,13 @@ export class FolderManager {
 
     constructor(folder: string) {
         this.folder = folder;
+        this.removeFolder();
     }
 
     public zipFolder(): Buffer {
         const zip: admZip = new admZip();
         zip.addLocalFolder(this.folder);
+        this.removeFolder();
         return zip.toBuffer();
     }
 

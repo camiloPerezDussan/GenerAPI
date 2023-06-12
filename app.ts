@@ -1,10 +1,10 @@
 import express from 'express';
 import { Request, Response } from 'express';
+import { ValidationError } from 'express-validation';
 import cors from 'cors';
 import './config/config';
 import { corsOptions } from './config/cors';
 import routes from './controllers/routes';
-import { ValidationError } from 'express-validation';
 
 const app = express();
 app.use(cors(corsOptions)); // application middleware

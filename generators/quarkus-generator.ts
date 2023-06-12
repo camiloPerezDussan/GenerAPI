@@ -5,8 +5,7 @@ import {
     complexFormatToJavaType,
     defaultFormatValues,
     importComplexTypes,
-    genericResourceImports,
-    JSON_MEDIA_TYPE
+    genericResourceImports
 } from '../constants/quarkus-constants';
 
 export class Quarkus {
@@ -35,7 +34,7 @@ export class Quarkus {
         await this.manager.replaceData(
             {
                 appName: this.swagger.getTitle(),
-                lowerCaseAppName: this.swagger.getTitleLowerCase(),
+                lowerCaseAppName: this.swagger.getTitle(),
                 version: `v${this.swagger.getMajorVersion()}`,
                 importPackage: this.importPackage,
                 package_1: this.appPackage[0],
@@ -108,12 +107,12 @@ export class Quarkus {
                 modelName: `${name}`,
                 importPackage: this.importPackage,
                 imports,
-                lowerCaseAppName: this.swagger.getTitleLowerCase(),
+                lowerCaseAppName: this.swagger.getTitle(),
                 version: `v${this.swagger.getMajorVersion()}`,
                 parameters: `${parameters}`
             },
             origintemplate,
-            `./outputs/${this.swagger.getTitle()}/src/main/java/${this.appPackage[0]}/${this.appPackage[1]}/${this.appPackage[2]}/${this.swagger.getTitleLowerCase()}/application/v${this.swagger.getMajorVersion()}`
+            `./outputs/${this.swagger.getTitle()}/src/main/java/${this.appPackage[0]}/${this.appPackage[1]}/${this.appPackage[2]}/${this.swagger.getTitle()}/application/v${this.swagger.getMajorVersion()}`
         );
         return;
     }
@@ -129,16 +128,6 @@ export class Quarkus {
         }).join('');
     }
 
-    private createResourceImports(): string {
-        this.resourceImports.map((keyImport: string) => {
-            let importItem = genericResourceImports.get(keyImport);
-            if (!importItem) {
-            }
-        });
-        return this.resourceImports.map((dataType: string) => `import ${this.importPackage}.${this.swagger.getTitleLowerCase()}.application.v${this.swagger.getMajorVersion()}.front.${dataType};
-`).join('');
-    }
-
     private createResourceMethodName(path: string, verbName: string): string {
         const partPathsName: string[] = path.split('/')
         partPathsName.push(verbName);
@@ -151,7 +140,7 @@ export class Quarkus {
     private addResourceImport(keyImport: string) {
         let importLine: string = '';
         importLine = !genericResourceImports.has(keyImport)
-            ? `import ${this.importPackage}.${this.swagger.getTitleLowerCase()}.application.v${this.swagger.getMajorVersion()}.front.${keyImport};`
+            ? `import ${this.importPackage}.${this.swagger.getTitle()}.application.v${this.swagger.getMajorVersion()}.front.${keyImport};`
             : genericResourceImports.get(keyImport);
         if (!this.resourceImports.includes(importLine)) {
             this.resourceImports.push(importLine);
@@ -160,7 +149,7 @@ export class Quarkus {
 
     private createResourceApiResponses(verbObject): string {
         return this.swagger.getCodeObjectsByVerbObject(verbObject).map(codeObject => {
-            let definition: string = this.swagger.getDefinitionNameByCodeObject(codeObject);
+            let definition: string = this.swagger.getDefinitionNameByCodeObject(codeObject, verbObject.produceContentType);
             if (definition) {
                 this.addResourceImport(definition);
                 this.addResourceImport('Content');
@@ -215,9 +204,7 @@ export class Quarkus {
         this.addResourceImport('Response');
         return `
     @${verb}
-    @Path("${path}")
-    @Produces("${JSON_MEDIA_TYPE}")
-    @Consumes("${JSON_MEDIA_TYPE}")
+    @Path("${path}")${this.getProduceConsumeTemplate(verbObject)}
     @Counted(name = "${verbObject.description} V${this.swagger.getMajorVersion()} Count")
     @Timed(name = "${verbObject.description} V${this.swagger.getMajorVersion()} Time")
     @APIResponses(value = {
@@ -228,6 +215,19 @@ export class Quarkus {
         return Response.ok().entity(apim.${methodName}(request, language, messageId)).build();
     }
     `;
+    }
+
+    private getProduceConsumeTemplate(verbObject) {
+        let template = ''
+        if (verbObject.produceContentType) {
+            template = `
+    @Produces("${verbObject.produceContentType}")`
+        }
+        if (verbObject.consumeContentType) {
+            template += `
+    @Consumes("${verbObject.consumeContentType}")`
+        }
+        return template;
     }
 
     private async createService() {

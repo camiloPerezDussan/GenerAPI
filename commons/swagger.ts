@@ -30,7 +30,7 @@ export class Swagger {
 
     /** Extrae las definiciones usadas en el request de las operaciones */
     private searchRequestDefinitions(verbObject) {
-        let contentType: string = this.getRequestContentType(verbObject);
+        const contentType: string = this.getRequestContentType(verbObject);
         if (contentType) {
             verbObject.consumeContentType = contentType;
             this.searchRefDefinition(verbObject.requestBody, contentType);
@@ -41,7 +41,7 @@ export class Swagger {
     private searchResponseDefinitions(verbObject) {
         const codeObjects = this.getCodeObjectsByVerbObject(verbObject);
         codeObjects.map(codeObject => {
-            let contentType: string = this.getResponseContentType(codeObject);
+            const contentType: string = this.getResponseContentType(codeObject);
             if (contentType) {
                 verbObject.produceContentType = contentType;
                 this.searchRefDefinition(codeObject, contentType);
@@ -52,7 +52,7 @@ export class Swagger {
     /** Extrae el content-type asociado que contenga una definición */
     private getRequestContentType(object) {
         if (object.requestBody) {
-            let contentTypes: string[] = Object.keys(object.requestBody.content)
+            const contentTypes: string[] = Object.keys(object.requestBody.content)
             let i = 0;
             while (i < contentTypes.length) {
                 if (contentTypes[i].includes('application/vnd.gbm') && this.containsRequestBodyRefDefinition(object, contentTypes[i])) {
@@ -70,7 +70,7 @@ export class Swagger {
     /** Extrae el content-type asociado que contenga una definición */
     private getResponseContentType(object) {
         if (object.content) {
-            let contentTypes: string[] = Object.keys(object.content)
+            const contentTypes: string[] = Object.keys(object.content)
             let i = 0;
             while (i < contentTypes.length) {
                 if (contentTypes[i].includes('application/vnd.gbm') && object.content[contentTypes[i]].schema) {
